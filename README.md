@@ -7,10 +7,10 @@ Let's make the world better!
 Check the solution in `develop` branch for the newest version of code, not in `master` branch.
 
 # Status
-- [ ] Lab 1: MapReduce  
+- [x] Lab 1: MapReduce  
 - [x] Lab 2: Key/Value server
 - [ ] Lab 3: Raft
-* - [ ] Lab 3A: leader election
+* - [x] Lab 3A: leader election
 * - [ ] Lab 3B: log
 * - [ ] Lab 3C: persistence
 * - [ ] Lab 3D: log compaction
