@@ -8,9 +8,9 @@ Check the solution in `develop` branch for the newest version of code, not in `m
 
 # Status
 - [x] Lab 1: MapReduce  
-- [x] Lab 2: Key/Value server
+- [x] Lab 2: Key/Value server  [Note: lab2-key-value-server](docs/lab2-key-value-server.md)
 - [ ] Lab 3: Raft
-* - [x] Lab 3A: leader election
+* - [x] Lab 3A: leader election  [Note: lab3a-leader-election.md](docs/lab3a-leader-election.md)
 * - [ ] Lab 3B: log
 * - [ ] Lab 3C: persistence
 * - [ ] Lab 3D: log compaction
