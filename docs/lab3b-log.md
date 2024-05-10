@@ -17,7 +17,7 @@
 通过日志一致性检查后，`reply.Success`返回`true`，否则返回`false`。
 
 ## 2.2 RequestVote函数
-需要增加*选举限制*的判断（参见1.1节）。
+需要增加**选举限制**的判断（参见1.1节）。
 
 ## 2.3 Start函数
 Start函数根据入参构造`LogEntry`，添加到自己的`log`数组里，并发送`AppendEntry`给`Follower`，进行一次agreement。
@@ -82,5 +82,17 @@ Start函数根据入参构造`LogEntry`，添加到自己的`log`数组里，并
 ## 4.6 TestFailAgree3B
 测试3个节点的集群中，一个`Follower`断开一段时间后重新连接，能否与`Leader`重新保持日志的一致。
 
-(未完待续 to be continued)
+# 5. 测试通过
+[lab3b_pass](../images/Lab3b_pass.png)
+## 5.1 一些待改进的地方
+* 暂时未加上-race进行测试
+* 连续测试20次的时候，会有5次报错
+[Lab3B_20_times](../images/Lab3B_20_times.png)
+错误的信息是
+```text
+apply error: commit index=2 server=0 102 != server=2 103
+```
+[Lab3b_Failed_TestRejoin](../images/Lab3b_Failed_TestRejoin.png)
 
+
+(未完待续 to be continued)
