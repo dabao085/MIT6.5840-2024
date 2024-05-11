@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"sort"
 	"strconv"
 
 	//	"bytes"
@@ -49,10 +50,6 @@ type ApplyMsg struct {
 	Snapshot      []byte
 	SnapshotTerm  int
 	SnapshotIndex int
-}
-
-func (am *ApplyMsg) print() {
-	DPrintf("CommandValid:%t Command:%v CommandIndex:%d\n", am.CommandValid, am.Command, am.CommandIndex)
 }
 
 type Role int
@@ -105,10 +102,6 @@ type LogEntry struct {
 	Index int // the index of this LogEntry in 'log []*LogEntry', start from 1?
 }
 
-func (le *LogEntry) print() {
-	DPrintf("Command:%v, Term:%d, Index:%d\n", le.Command, le.Term, le.Index)
-}
-
 type AppendEntriesArgs struct {
 	Term         int // leader's term
 	LeaderId     int // so follower can redirect clients
@@ -116,11 +109,6 @@ type AppendEntriesArgs struct {
 	PrevLogTerm  int // term of PrevLogIndex entry
 	Entries      []LogEntry // log entries to store (empty for heartbeat, may send more than one for efficiency)
 	LeaderCommit int // leader's commitIndex
-}
-
-func (ae *AppendEntriesArgs) print() {
-	DPrintf("Term:%d, LeaderId:%d, PrevLogIndex:%d, PrevLongTerm:%d, Entries:%v, LeaderCommit:%d\n",
-		ae.Term, ae.LeaderId, ae.PrevLogIndex, ae.PrevLogTerm, ae.Entries, ae.LeaderCommit)
 }
 
 type AppendEntriesReply struct {
@@ -133,11 +121,6 @@ func min(x, y int) int {
 		return x
 	}
 	return y
-}
-
-func (rf *Raft) peek() {
-	message := "Server: " + strconv.Itoa(rf.me)
-	PrintLogEntries(message, rf.log)
 }
 
 // 一致性检查失败时reply.Success为false，成功时reply.Success为true
@@ -158,9 +141,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.role = Follower
-		//reply.Term = rf.currentTerm
-		//reply.Success = true
-		//return
 	}
 
 	// empty Entries in args means it's a heartbeat
@@ -170,29 +150,21 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		DPrintf("Follower %d 收到新增日志 from %d\n", rf.me, args.LeaderId)
 	}
 
-	// todo: 检查日志的一致性,还是有问题，重写一致性检查
 	newestLogOfFollower := rf.log[len(rf.log) - 1]
 	// args.PrevLogIndex在Follower的rf.log里没有对应的日志，返回false
 	// Follower's log doesn't contain an log entry at PrevLogIndex whose term matches prevLogTerm
 	DPrintf("Follower %d args.PrevLogIndex %d newestLogOfFollower.Index %d\n", rf.me, args.PrevLogIndex, newestLogOfFollower.Index)
 	if args.PrevLogIndex > newestLogOfFollower.Index {
 		reply.Success = false
-
 	} else {
 		// prev log match!
 		DPrintf("Follower %d args.PrevLogTerm %d rf.log[args.PrevLogIndex].Term %d\n", rf.me, args.PrevLogTerm, rf.log[args.PrevLogIndex].Term)
 		if args.PrevLogTerm == rf.log[args.PrevLogIndex].Term {
 			message := "Follower " + strconv.Itoa(rf.me)
-			// todo: 继续比较新的log entry和Follower对应的日志是否一致(如果有)
-			// todo: 找到最长的一致的地方，或许只要检查新增日志对应区间的日志是否匹配(只要看一个新的日志吗？)
 			var appendEntries []LogEntry
 			DPrintf("Follower %d len(args.Entries) %d\n", rf.me, len(args.Entries))
 			PrintLogEntries(message + " args.Entries", args.Entries)
 			for i, log := range args.Entries {
-				//fmt.Printf("Follower %d log.Index=%d len(rf.log)=%d log.Term=%d rf.log[log.Index].Term=%d\n",
-				//	rf.me, log.Index, len(rf.log), log.Term, rf.log[log.Index].Term)
-				// 这里有问题
-
 				if log.Index >= len(rf.log) {
 					appendEntries = append(appendEntries, log)
 				} else {
@@ -206,10 +178,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				}
 			}
 
-			// todo: append new entries to follower's log
 			PrintLogEntries(message + " rf.log", rf.log)
 			PrintLogEntries(message + " appendEntries", rf.log)
-
+			// XXX: append new entries to follower's log
 			rf.log = append(rf.log, appendEntries...)
 			PrintLogEntries(message + " after append rf.log", rf.log)
 			reply.Success = true
@@ -217,38 +188,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			reply.Success = false
 		}
 	}
-	//	DPrintf("(169) Follower: %d 检查日志一致性 args.PrevLogIndex: %d, len(rf.log)-1: %d\n", rf.me, args.PrevLogIndex, len(rf.log) - 1)
-	//	if args.PrevLogIndex > rf.log[len(rf.log) - 1].Index {
-	//		// Follower's log doesn't contain an log entry at PrevLogIndex whose term matches prevLogTerm
-	//		reply.Success = false
-	//		//return // ? 直接返回，这样让Leader找正确的地方
-	//	} else {
-	//		// Leader's prev log entry and Follower's latest log entry match!
-	//		if args.PrevLogTerm == rf.log[args.PrevLogIndex].Term {
-	//			// match!
-	//		} else {
-	//			// XXX: delete the existing entry and all that follow it
-	//			// todo: set reply.Success false?
-	//
-	//			rf.log = rf.log[:args.PrevLogIndex]
-	//		}
-	//		DPrintf("Leader %d 发送给 Follower %d 的日志args.Entries的大小 %d\n", args.LeaderId, rf.me, len(args.Entries))
-	//		rf.log = append(rf.log, args.Entries...) // Entries可能有多个
-	//		DPrintf("Follower %d 添加完日志后，本地有效日志长度为 %d\n", rf.me, len(rf.log) - 1)
-	//		reply.Success = true
-	//	}
 
 	// if leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
 	//DPrintf("(264) Follower: %d AppendEntries args.LeaderCommit: %d rf.commitIndex=%d\n", rf.me, args.LeaderCommit, rf.commitIndex)
 	if args.LeaderCommit > rf.commitIndex {
-		// fixme: 日志不一致怎么办？不能盲目提交，要先找到最后一致的地方，与Leader同步后再提交
+		// XXX: 日志不一致怎么办？不能盲目提交，要先找到最后一致的地方，与Leader同步后再提交
 		if reply.Success {
 			rf.commitIndex = min(args.LeaderCommit, rf.log[len(rf.log)-1].Index)
 		}
-		//reply.Success = true // ?
-		//reply.Term = rf.currentTerm
-		//DPrintf("(269) Follower: %d AppendEntries rf.commitIndex=%d\n", rf.me, rf.commitIndex)
-		//return
 	}
 }
 
@@ -354,8 +301,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	//DPrintf("226: me:%d rf.votedFor %d\n", rf.me, rf.votedFor)
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
-		// todo: check candidate's log is at least as up-to-date as receiver's log
-		// todo: 如果对方的log不比自己旧，我才给它投票
+		// XXX: check candidate's log is at least as up-to-date as receiver's log
+		// XXX: 如果对方的log不比自己旧，我才给它投票
 		lastLogEntry := rf.log[len(rf.log)-1]
 		DPrintf("%d-%d\n", args.LastLogTerm, rf.currentTerm)
 		if args.LastLogTerm > lastLogEntry.Term {
@@ -465,6 +412,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// append new log entry
 	DPrintf("Leader: %d 添加日志: %v\n", rf.me, command)
 	rf.log = append(rf.log, logEntry)
+	rf.matchIndex[rf.me] = len(rf.log) - 1
 
 	// start a agreement process
 	go rf.sendAppendEntries()
@@ -477,7 +425,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // only called by leader
 func (rf *Raft) sendAppendEntries() {
 	var successNum int64 = 1 // since Leader itself has keep the entry into local log.
-	index := 0
 	rf.mu.Lock()
 	for i := 0; i < len(rf.peers); i++ {
 		// skip self
@@ -487,15 +434,11 @@ func (rf *Raft) sendAppendEntries() {
 			DPrintf("=======Leader %d %d %d\n",rf.me, rf.log[len(rf.log)-1].Index, rf.nextIndex[i])
 			message := "Leader " + strconv.Itoa(rf.me) + " send to Follower " + strconv.Itoa(i)
 			if rf.log[len(rf.log)-1].Index >= rf.nextIndex[i] {
-				//DPrintf("Leader %d nextIndex[%d]下标 %d\n", rf.me, i, rf.nextIndex[i])
-				//DPrintf("Leader %d len(rf.log)的长度啊: %d\n", rf.me, len(rf.log))
-				// rf.nextIndex[i]错了,有时候变成0了，真是匪夷所思
 				DPrintf("Leader %d send to Follower %d nextIndex %d\n", rf.me, i, rf.nextIndex[i])
 				PrintLogEntries(message + " (482) Leader rf.log ", rf.log)
 				entries := rf.log[rf.nextIndex[i]:]
 				PrintLogEntries(message + " (484) entries", entries)
 				DPrintf("Leader %d 发送日志消息给节点: %d, 日志下标%d-%d\n", rf.me, i, entries[0].Index, entries[len(entries)-1].Index)
-				index = entries[len(entries)-1].Index
 				go rf.sendAppendEntry(i, entries, &successNum)
 			} else {
 				DPrintf("Leader %d 没有日志需要发送给Follower: %d\n", rf.me, i)
@@ -503,23 +446,6 @@ func (rf *Raft) sendAppendEntries() {
 		}
 	}
 
-	rf.mu.Unlock()
-	// wait for majority of the follower reply and then commit this log
-	for {
-		//DPrintf("%d got %d replies\n", rf.me, atomic.LoadInt64(&successNum))
-		//DPrintf("len(rf.peers):%d\n", len(rf.peers))
-		DPrintf("Leader %d 等待日志%d 的回复 successNum is %d\n", rf.me, index, int(atomic.LoadInt64(&successNum)))
-		if int(atomic.LoadInt64(&successNum)) > len(rf.peers) / 2 {
-			DPrintf("Leader: %d 收到日志index=%d超过半数的投票\n", rf.me, index)
-			break
-		}
-
-		time.Sleep(time.Duration(100) * time.Millisecond)
-	}
-
-	rf.mu.Lock()
-	DPrintf("Leader %d 更新rf.commitIndex=%d entry.Index=%d\n", rf.me, rf.commitIndex, rf.log[len(rf.log)-1].Index)
-	rf.commitIndex = rf.log[len(rf.log)-1].Index // index of log to be committed
 	rf.mu.Unlock()
 }
 
@@ -533,12 +459,8 @@ func (rf *Raft) sendAppendEntry(i int, entries []LogEntry, successNum *int64) {
 	} else {
 		DPrintf("Leader %d send to Follower %d %d %d \n", rf.me, i, len(rf.log), len(entries))
 		prevLogIndex = rf.log[rf.nextIndex[i]-1].Index
-		//prevLogIndex = rf.log[len(rf.log) - len(entries) - 1].Index
 		prevLogTerm = rf.log[prevLogIndex].Term
 		DPrintf("Leader %d send to Follower %d, prevLogIndex=%d, prevLogTerm=%d\n", rf.me, i, prevLogIndex, prevLogTerm)
-
-		//prevLogIndex = rf.log[rf.nextIndex[i]-1].Index
-		//prevLogTerm = rf.log[rf.nextIndex[i]-1].Term
 	}
 
 	args := AppendEntriesArgs{
@@ -552,7 +474,7 @@ func (rf *Raft) sendAppendEntry(i int, entries []LogEntry, successNum *int64) {
 	reply := AppendEntriesReply {}
 	rf.mu.Unlock()
 
-	// todo: 如果AppendEntries失败，应该把对应的nextIndex-1，直到AppendEntries成功
+	// XXX: 如果AppendEntries失败，应该把对应的nextIndex-1，直到AppendEntries成功
 	DPrintf("Leader %d 调用Raft.AppendEntries to Follower %d\n", rf.me, i)
 	ok := rf.peers[i].Call("Raft.AppendEntries", &args, &reply)
 	rf.mu.Lock()
@@ -562,58 +484,68 @@ func (rf *Raft) sendAppendEntry(i int, entries []LogEntry, successNum *int64) {
 
 		if reply.Success {
 			atomic.AddInt64(successNum, 1)
-			// todo: 这里nextIndex的更新正确吗？
 			DPrintf("Leader %d nextIndex[%d] 是 %d\n", rf.me, i, entries[len(entries) - 1].Index + 1)
 			rf.nextIndex[i] = entries[len(entries) - 1].Index + 1
-			rf.matchIndex[i] = entries[len(entries) - 1].Index // todo: 这里matchIndex的更新要注意是否正确
+			rf.matchIndex[i] = entries[len(entries) - 1].Index
+			DPrintf("(572)Follower %d nextIndex=%d matchIndex=%d\n", i, rf.nextIndex[i], rf.matchIndex[i])
+			DPrintf("(573)Leader %d nextIndex=%d matchIndex=%d\n", rf.me, rf.nextIndex[rf.me], rf.matchIndex[rf.me])
 		} else {
 			DPrintf("(561) Leader %d from Follower %d rf.nextIndex[%d]-1 = %d\n", rf.me, i, i, rf.nextIndex[i]-1)
-			rf.nextIndex[i]-- // todo: 什么时候重试呢？ 心跳的时候就能重试了
+			rf.nextIndex[i]-- // XXX: 什么时候重试呢？ 心跳的时候就能重试了
 		}
 	}
 	rf.mu.Unlock()
 }
 
-// find the largest commitIndex to check
-//func findMaxGreaterThanHalf(arr []int) int {
-//	sort.Ints(arr)
-//
-//	halfCount := len(arr) / 2
-//
-//	for i := halfCount; i < len(arr); i++ {
-//		// what if every element is the same?
-//		if arr[i] >= arr[halfCount-1] {
-//			return arr[i]
-//		}
-//	}
-//
-//	return -1
-//}
-//
-//// only for Leader to commit log
-//func (rf *Raft) commitLog() {
-//	for {
-//		rf.mu.Lock()
-//		if rf.role != Leader {
-//			rf.mu.Unlock()
-//			break
-//		} else {
-//			// the match index we're going to check, we can optimize it later
-//			// 需要找到最大的那个超过半数的index
-//			// Commit this log entry
-//			rf.commitIndex = findMaxGreaterThanHalf(rf.matchIndex)
-//
-//			rf.mu.Unlock()
-//			// sleep
-//			time.Sleep(time.Duration(10) * time.Millisecond)
-//		}
-//	}
-//}
+//find the largest commitIndex to check
+func findMaxGreaterThanHalf(arr []int) int {
+	// deep copy from a slice
+	newArr := make([]int, len(arr))
+	copy(newArr, arr)
+	sort.Ints(newArr)
+
+	halfCount := len(newArr) / 2
+	for i := halfCount; i < len(newArr); i++ {
+		if newArr[i] >= newArr[halfCount-1] {
+			return newArr[i]
+		}
+	}
+
+	return -1
+}
+
+// only for Leader to commit log
+func (rf *Raft) commitLog() {
+	DPrintf("Start commitLog")
+	for !rf.killed() {
+		for {
+			rf.mu.Lock()
+			if rf.role != Leader {
+				rf.mu.Unlock()
+				return
+			} else {
+				// the match index we're going to check, we can optimize it later
+				// 需要找到最大的那个超过半数的index
+				// Commit this log entry
+				for _, mi := range rf.matchIndex {
+					DPrintf("mi=%d\n", mi)
+				}
+
+				rf.commitIndex = findMaxGreaterThanHalf(rf.matchIndex)
+				DPrintf("max commitIndex=%d\n", rf.commitIndex)
+				rf.mu.Unlock()
+				// sleep
+				time.Sleep(time.Duration(100) * time.Millisecond)
+			}
+		}
+	}
+}
 
 func (rf *Raft) applyLog() {
 	for {
 		// nothing to apply to state machine, just wait for 100 millisecond
 		rf.mu.Lock()
+		DPrintf("Server %d rf.commitIndex: %d rf.lastApplied=%d len(rf.log)=%d\n",rf.me, rf.commitIndex, rf.lastApplied, len(rf.log))
 		if rf.commitIndex == rf.lastApplied {
 			//DPrintf("applyLog %d sleep 100 millisecond\n", rf.me)
 			rf.mu.Unlock()
@@ -634,6 +566,7 @@ func (rf *Raft) applyLog() {
 			// ?
 			DPrintf("applyLog %d ??????????\n", rf.me)
 			rf.mu.Unlock()
+			time.Sleep(time.Duration(100) * time.Millisecond)
 		}
 	}
 }
@@ -710,7 +643,7 @@ func (rf *Raft) collectVotes(index int, args *RequestVoteArgs) {
 
 		DPrintf("%d is leader now\n", rf.me)
 		go rf.sendHeartbeats()
-		//go rf.commitLog()
+		go rf.commitLog()
 	}
 }
 
@@ -739,17 +672,17 @@ func (rf *Raft) sendHeartbeats() {
 	for !rf.killed() {
 		for i := 0; i < len(rf.peers); i++ {
 			rf.mu.Lock()
-			// skip self
-			if i == rf.me {
-				rf.mu.Unlock()
-				continue
-			}
 
-			// fixme: move before 'skip self'
 			if rf.role != Leader {
 				DPrintf("%d not a leader anymore\n", rf.me)
 				rf.mu.Unlock()
 				return
+			}
+
+			// skip self
+			if i == rf.me {
+				rf.mu.Unlock()
+				continue
 			}
 
 			go rf.sendHeartbeat(i)
@@ -773,8 +706,8 @@ func (rf *Raft) sendHeartbeat(i int) {
 		PrevLogTerm: rf.log[rf.log[rf.nextIndex[i]-1].Index].Term,
 	}
 
-	// todo: 如果发现日志一致性检查失败，那么可以在心跳包里添加日志信息，加快恢复速度，否则只有等下次发送日志的时候才会把完整日志发送过去
-	if rf.nextIndex[i] < len(rf.log) - 1 {
+	// XXX: 如果发现日志一致性检查失败，那么可以在心跳包里添加日志信息，加快恢复速度，否则只有等下次发送日志的时候才会把完整日志发送过去
+	if rf.nextIndex[i] < len(rf.log) {
 		args.Entries = rf.log[rf.nextIndex[i]:]
 	}
 
@@ -793,6 +726,13 @@ func (rf *Raft) sendHeartbeat(i int) {
 			rf.nextIndex[i]--
 			if rf.nextIndex[i] != 0 {
 				go rf.sendHeartbeat(i)
+			}
+		} else {
+			if len(args.Entries) > 0 {
+				rf.nextIndex[i] = args.Entries[len(args.Entries) - 1].Index + 1
+				rf.matchIndex[i] = args.Entries[len(args.Entries) - 1].Index
+				DPrintf("(811)Follower %d nextIndex=%d matchIndex=%d\n", i, rf.nextIndex[i], rf.matchIndex[i])
+				DPrintf("(813)Leader %d nextIndex=%d matchIndex=%d\n", rf.me, rf.nextIndex[rf.me], rf.matchIndex[rf.me])
 			}
 		}
 		DPrintf("(720) %d send AppendEntry reply to Leader\n", i)
